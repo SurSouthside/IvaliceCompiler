@@ -1,0 +1,262 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <title>Ivalice Compiler</title>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <link rel="stylesheet" type="text/css" href="compiler.css" />
+  <!--<script>
+	function check()
+	{
+		document.getElementById("mode").checked = true;
+		mode = true;
+	}
+	
+	function unCheck()
+	{
+		document.getElementById("mode").checked = false;
+		mode = false;
+	}
+	</script>-->
+</head>
+<body onload="init();">
+    <h1>Ivalice Compiler Project</h1>
+	<a href="compilertestcases.txt">Test Cases</a> 
+    <p>
+        . . . <em>a simple parser for a simple grammar</em>:
+    </p>
+	<br>
+    <pre>
+Program   ::== Statement $
+Statement ::== print( Expr )
+		  ::== Id = Expr
+		  ::== VarDecl
+		  ::== { StatementList }
+		  ::== WhileStatement
+		  ::== IfStatement
+WhileStatement ::== while BooleanExpr { StatementList }
+IfStatement ::== if BooleanExpr { StatementList }
+StatementList ::== Statement StatementList
+			  ::== e
+Expr ::== IntExpr
+	 ::== StringExpr
+	 ::== BooleanExpr
+	 ::== Id
+IntExpr ::== digit op Expr
+		::== digit
+StringExpr ::== " CharList "
+BooleanExpr ::==( Expr == Expr)
+            ::==  boolVal
+CharList ::== Char CharList
+		 ::== Space CharList
+		 ::== e
+VarDecl ::== Type Id
+Type ::== int | string | boolean
+Id ::== Char
+Char ::== a | b | c ... z
+Space ::== the space character
+digit ::== 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 0
+boolVal ::== false | true
+op ::== + | -
+    </pre>
+	</br>
+	<input type="checkbox" id="mode">Lolcat Mode<br>
+    <div>
+        <img style="float:right;" src="images/CompilerPhases.png" alt="Compiler Phases diagram" />
+    </div>    
+    <div>
+        <textarea id="taSourceCode" cols="32" rows="18"></textarea>
+        <br>
+        <input type="button" id="btnCompile" value="Compile" onclick="btnCompile_click();"/>
+        <br>
+        <textarea id="taOutput" cols="32" rows="32"></textarea>
+    </div>
+	<div>
+		<textarea id="taTreeOutput" cols="64" rows="32"></textarea>
+	</div>
+	<div>
+		<textarea id="taOpCodeOutput" cols="64" rows="9"></textarea>
+	</div>
+    <!-- Footer -->
+    <p>
+        <a href="http://validator.w3.org/check?uri=referer">
+            <img src="images/w3cvalidhtml5.jpg" alt="Valid HTML5" width="88" height="31" />
+        </a>
+    </p>
+    <!-- Client-side code down here, per the YSlow advice. 
+    // (http://developer.yahoo.com/performance/rules.html#js_bottom) -->
+    <script type="text/javascript" src="utils.js"></script>	
+    <script type="text/javascript" src="lexer.js"></script>	
+	<script type="text/javascript" src="parser.js"></script>
+	<script type="text/javascript" src="symTableManager.js"></script>
+	<script type="text/javascript" src="treeManager.js"></script>
+	<script type="text/javascript" src="codegen.js"></script>
+	<!--<script type="text/javascript" src="parser.js"></script>-->
+    <script type="text/javascript">
+    // Global variables
+    var tokens = "";
+    var tokenIndex = 0;
+    var currentToken = "";
+    var errorCount = 0;
+    var EOF = "$";
+	var mode = false; //Lolcat mode (This was the best thing I could think of on the fly. I promise it will be better in Project 2)
+	
+    function init()
+    {
+		// Clear the code entry box
+		//document.getElementById("taSourceCode").value = "";
+        // Clear the message box.
+        document.getElementById("taOutput").value = "";
+		document.getElementById("taTreeOutput").value = "";
+        // Set the initial values for our globals.
+        tokens = "";
+        tokenIndex = 0;
+        currentToken = ' ';
+		totalErrors = 0; //For lex
+        errorCount = 0;  //For parse
+		//symbolTable = {} //Hashtable of arrays
+    }
+    
+    function btnCompile_click()
+    {        
+        // This is executed as a result of the usr pressing the 
+        // "compile" button between the two text areas, above.  
+        // Note the <input> element's event handler: onclick="btnCompile_click();
+        init();
+        putMessage("Compilation Started");
+        // Grab the tokens from the lexer . . .
+        tokens = lex();
+        putMessage("Lex returned [" + tokens + "]");
+		//Check for total errors before parse(don't allow if > 0?)?
+		
+		if (totalErrors > 0)
+		{
+			putMessage("Error(s) detected during lex. Will not continue to parse until they are fixed");
+			return;
+		}
+		 
+        // . . . and parse!
+        parse(tokenStream);
+		if (errorCount > 0)
+		{
+			putMessage("Error(s) detected during parse. Will not produce symbol table and CST until they are fixed");
+			return;
+		}
+		putMessage("-------Symbol Table-------");
+		var symData = printSymbolTables(symbolTables.root.children[0]); //The only child of the superroot
+		putMessage(symData);
+		putTree("-------CST-------");
+		putTree(csTree.toString());
+		csTree.composeAST();
+		putTree("-------AST-------");
+		putTree(asTree.toString());
+		codeGen(asTree);
+		put6502(printCode(opCodeStream));
+    }
+    
+    function putMessage(msg)
+    {
+        document.getElementById("taOutput").value += msg + "\n";
+    }
+	function putTree(treeOutput)
+	{
+		document.getElementById("taTreeOutput").value += treeOutput + "\n";
+	}
+	
+	function put6502(codeOutput)
+	{
+		document.getElementById("taOpCodeOutput").value += codeOutput + "\n";
+	}
+    
+    
+	/*
+    function parse()
+    {
+        putMessage("Parsing [" + tokens + "]");
+        // Grab the next token.
+        currentToken = getNextToken();
+        // A valid parse derives the G(oal) production, so begin there.
+        parseG();
+        // Report the results.
+        putMessage("Parsing found " + errorCount + " error(s).");        
+    }
+    
+    function parseG()
+    {
+        // A G(oal) production can only be an E(xpression), so parse the E production.
+        parseE();
+    }
+
+    function parseE()
+    {
+        // All E productions begin with a digit, so make sure that we have one.
+        checkToken("digit");
+        // Look ahead 1 char (which is now in currentToken because checkToken 
+        // consumes another one) and see which E production to follow.
+        if (currentToken != EOF)
+        {
+            // We're not done, we we expect to have an op.
+            checkToken("op");
+            parseE();
+        }
+        else
+        {
+            // There is nothing else in the token stream, 
+            // and that's cool since E --> digit is valid.
+            putMessage("EOF reached");
+        }
+    }
+
+    function checkToken(expectedKind)
+    {
+        // Validate that we have the expected token kind and et the next token.
+        switch(expectedKind)
+        {
+            case "digit":   putMessage("Expecting a digit");
+                            if (currentToken=="0" || currentToken=="1" || currentToken=="2" || 
+                                currentToken=="3" || currentToken=="4" || currentToken=="5" || 
+                                currentToken=="6" || currentToken=="7" || currentToken=="8" || 
+                                currentToken=="9")
+                            {
+                                putMessage("Got a digit!");
+                            }
+                            else
+                            {
+                                errorCount++;
+                                putMessage("NOT a digit.  Error at position " + tokenIndex + ".");
+                            }
+                            break;
+            case "op":      putMessage("Expecting an operator");
+                            if (currentToken=="+" || currentToken=="-")
+                            {
+                                putMessage("Got an operator!");
+                            }
+                            else
+                            {
+                                errorCount++;
+                                putMessage("NOT an operator.  Error at position " + tokenIndex + ".");
+                            }
+                            break;
+            default:        putMessage("Parse Error: Invalid Token Type at position " + tokenIndex + ".");
+                            break;			
+        }
+        // Consume another token, having just checked this one, because that 
+        // will allow the code to see what's coming next... a sort of "look-ahead".
+        currentToken = getNextToken();
+    }
+
+    function getNextToken()
+    {
+        var thisToken = EOF;    // Let's assume that we're at the EOF.
+        if (tokenIndex < tokens.length)
+        {
+            // If we're not at EOF, then return the next token in the stream and advance the index.
+            thisToken = tokens[tokenIndex];
+            putMessage("Current token:" + thisToken);
+            tokenIndex++;
+        }
+        return thisToken;
+    }
+	*/
+    </script>
+</body>
+</html>
