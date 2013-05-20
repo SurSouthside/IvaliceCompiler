@@ -4,7 +4,7 @@
    we built last semester */
    
    
-var opCodeStream = [];
+var opCodeStream = [];  
 var staticTable = [];
 //var heapTable = [];
 var jumpTable = [];
